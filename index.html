@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crosscut — board cut planner</title>
+<meta name="description" content="Plan out the cuts in a sheet or board. Lay out pieces visually, snap to fractions of an inch or centimetres, rotate, and move pieces between boards.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%23b4753a'/><rect x='5' y='5' width='13' height='9' rx='1.5' fill='%23f3e4cf'/><rect x='5' y='17' width='8' height='10' rx='1.5' fill='%23f3e4cf'/><rect x='16' y='17' width='11' height='6' rx='1.5' fill='%23f3e4cf'/></svg>">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- ───────────────────────── Setup screen ───────────────────────── -->
+<section id="setup" class="setup">
+  <div class="setup-card">
+    <h1 class="logo">Crosscut</h1>
+    <p class="tagline">Plan the cuts in a board before you touch the saw.</p>
+
+    <form id="setup-form" class="setup-form" autocomplete="off">
+      <div class="size-row">
+        <label class="big-field">
+          <span class="big-label">Width</span>
+          <input id="setup-w" class="big-input" type="number" inputmode="decimal" step="any" min="0.1" value="4" required>
+        </label>
+        <div class="times">&times;</div>
+        <label class="big-field">
+          <span class="big-label">Height</span>
+          <input id="setup-h" class="big-input" type="number" inputmode="decimal" step="any" min="0.1" value="4" required>
+        </label>
+      </div>
+
+      <label class="unit-field">
+        <span class="big-label">Units</span>
+        <select id="setup-unit" class="unit-select"></select>
+      </label>
+
+      <button type="submit" class="primary big-button">Start planning</button>
+      <p id="setup-note" class="setup-note"></p>
+      <button type="button" id="restore-btn" class="link-button hidden">Resume your last plan</button>
+    </form>
+  </div>
+  <footer class="setup-foot">
+    Everything stays in your browser — no account, no upload.
+  </footer>
+</section>
+
+<!-- ───────────────────────── Planner ───────────────────────── -->
+<div id="app" class="app hidden">
+  <header class="toolbar">
+    <div class="tb-group tb-brand">
+      <button id="home-btn" class="icon-button" title="Back to start (keeps your plan)">&#8962;</button>
+      <strong class="brand">Crosscut</strong>
+    </div>
+
+    <div class="tb-group">
+      <button id="mode-select" class="mode-button is-active" data-mode="select" title="Select, drag and rotate pieces (V)">
+        <span class="mode-glyph">&#10132;</span> Select
+      </button>
+      <button id="mode-add" class="mode-button" data-mode="add" title="Draw a new piece: click once, then click again (A)">
+        <span class="mode-glyph">+</span> Add piece
+      </button>
+    </div>
+
+    <div class="tb-group">
+      <label class="tb-label" for="snap-select">Snap</label>
+      <select id="snap-select" class="tb-select"></select>
+    </div>
+
+    <div class="tb-group">
+      <label class="tb-label" for="kerf-input">Kerf</label>
+      <input id="kerf-input" class="tb-input" type="number" step="any" min="0" value="0" title="Saw kerf: the gap kept between pieces">
+      <span id="kerf-unit" class="tb-unit">in</span>
+    </div>
+
+    <div class="tb-group">
+      <label class="tb-label" for="zoom-range">Zoom</label>
+      <input id="zoom-range" class="tb-range" type="range" min="0.3" max="3" step="0.05" value="1">
+    </div>
+
+    <div class="tb-group tb-right">
+      <button id="undo-btn" class="icon-button" title="Undo (Ctrl+Z)">&#8630;</button>
+      <button id="redo-btn" class="icon-button" title="Redo (Ctrl+Shift+Z)">&#8631;</button>
+      <button id="add-board-btn" class="ghost-button" title="Add another board">+ Board</button>
+      <details class="menu">
+        <summary class="icon-button" title="More">&#8943;</summary>
+        <div class="menu-panel">
+          <button id="export-btn" class="menu-item">Export plan (.json)</button>
+          <button id="import-btn" class="menu-item">Import plan…</button>
+          <button id="print-btn" class="menu-item">Print / save as PDF</button>
+          <button id="reset-btn" class="menu-item danger">Start over</button>
+        </div>
+      </details>
+      <input id="import-file" type="file" accept="application/json,.json" class="hidden">
+    </div>
+  </header>
+
+  <main class="workspace">
+    <div id="boards" class="boards" tabindex="0"></div>
+
+    <aside class="sidebar">
+      <section class="panel">
+        <h2 class="panel-title">Quick add</h2>
+        <div class="quick-add">
+          <div class="qa-row">
+            <label class="qa-field"><span>W</span><input id="qa-w" type="number" step="any" min="0" placeholder="12"></label>
+            <span class="qa-times">&times;</span>
+            <label class="qa-field"><span>H</span><input id="qa-h" type="number" step="any" min="0" placeholder="16"></label>
+            <label class="qa-field qa-qty"><span>Qty</span><input id="qa-qty" type="number" step="1" min="1" value="1"></label>
+          </div>
+          <label class="qa-label-field"><span>Label (optional)</span><input id="qa-label" type="text" placeholder="Shelf"></label>
+          <button id="qa-add" class="primary">Add piece</button>
+          <p class="hint">Pieces are dropped into the first free spot. Or draw one straight onto a board with <strong>Add piece</strong>.</p>
+        </div>
+      </section>
+
+      <section id="selection-panel" class="panel hidden">
+        <h2 class="panel-title">Selected piece</h2>
+        <div class="sel-body">
+          <label class="qa-label-field"><span>Label</span><input id="sel-label" type="text" placeholder="Untitled"></label>
+          <div class="qa-row">
+            <label class="qa-field"><span>W</span><input id="sel-w" type="number" step="any" min="0"></label>
+            <span class="qa-times">&times;</span>
+            <label class="qa-field"><span>H</span><input id="sel-h" type="number" step="any" min="0"></label>
+          </div>
+          <div class="qa-row">
+            <label class="qa-field"><span>X</span><input id="sel-x" type="number" step="any"></label>
+            <label class="qa-field"><span>Y</span><input id="sel-y" type="number" step="any"></label>
+          </div>
+          <label class="qa-label-field"><span>Board</span><select id="sel-board" class="tb-select"></select></label>
+          <div class="sel-actions">
+            <button id="sel-rotate" class="ghost-button" title="Rotate 90° (R)">&#8635; Rotate</button>
+            <button id="sel-dupe" class="ghost-button" title="Duplicate (Ctrl+D)">&#10697; Duplicate</button>
+            <button id="sel-delete" class="ghost-button danger" title="Delete (Del)">&#128465; Delete</button>
+          </div>
+          <p id="sel-status" class="sel-status"></p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Cut list</h2>
+        <div id="cutlist" class="cutlist"></div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="drawing-hint" class="drawing-hint hidden">Click once to set a corner, again to finish. <kbd>Esc</kbd> cancels.</div>
+</div>
+
+<script src="js/units.js"></script>
+<script src="js/state.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
