@@ -33,6 +33,15 @@ body {
 
 .hidden { display: none !important; }
 
+.load-error {
+  margin: 0;
+  padding: 14px 18px;
+  background: #5a1f1f;
+  color: #ffe3e3;
+  font-size: 14px;
+  border-bottom: 1px solid #7d2d2d;
+}
+
 button { font: inherit; cursor: pointer; }
 input, select { font: inherit; color: inherit; }
 

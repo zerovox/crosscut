@@ -17,7 +17,11 @@
   /* ------------------------------------------------------------- helpers */
 
   function $(id) { return doc.getElementById(id); }
-  function on(el, type, fn, opts) { el.addEventListener(type, fn, opts); }
+  function on(el, type, fn, opts) {
+    // A control that is not on the page must not take the whole app down with it.
+    if (!el) return;
+    el.addEventListener(type, fn, opts);
+  }
 
   function el(tag, className, text) {
     var node = doc.createElement(tag);
@@ -1093,9 +1097,25 @@
     });
   }
 
+  /* Last line of defence: whatever goes wrong at startup, say so on the page
+     rather than leaving a blank one with the reason buried in the console. */
+  function boot() {
+    try {
+      init();
+    } catch (err) {
+      var note = doc.createElement('p');
+      note.className = 'load-error';
+      note.textContent = 'Crosscut could not start. If it worked before, the browser is ' +
+        'probably holding an old copy of the page — reload with Ctrl+Shift+R ' +
+        '(⌘+Shift+R on a Mac). Details are in the console.';
+      doc.body.insertBefore(note, doc.body.firstChild);
+      if (global.console && global.console.error) global.console.error(err);
+    }
+  }
+
   if (doc.readyState === 'loading') {
-    on(doc, 'DOMContentLoaded', init);
+    on(doc, 'DOMContentLoaded', boot);
   } else {
-    init();
+    boot();
   }
 })(window);

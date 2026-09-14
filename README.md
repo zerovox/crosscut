@@ -70,6 +70,14 @@ Pushing to `main` deploys via `.github/workflows/pages.yml`. Enable it once
 under **Settings → Pages → Source → GitHub Actions**. Serving the branch
 directly works too — `.nojekyll` is already in place.
 
+GitHub Pages serves every file with `max-age=600` and no way to set headers,
+so a browser can revalidate `index.html` on a navigation while still using a
+cached `js/app.js` — new markup, old script, dead page. The scripts and
+stylesheet are therefore referenced as `?v=dev`, and the workflow rewrites that
+to the commit SHA at deploy time, giving each deploy its own asset URLs. Keep
+the `?v=dev` placeholders when adding a file; opened from disk they are just
+ignored.
+
 ## Layout
 
 ```
