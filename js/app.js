@@ -9,10 +9,9 @@
   var project = null;
   var history = new S.History();
   var selectedId = null;
-  var mode = 'select';
   var scale = 6;          // pixels per base unit (inch or centimetre)
-  var draw = null;        // in-progress rectangle: { boardId, ax, ay, x, y, armed }
-  var drag = null;        // in-progress move/resize
+  var draw = null;        // rectangle being dragged out on bare board
+  var drag = null;        // piece being moved or resized
   var els = {};
 
   /* ------------------------------------------------------------- helpers */
@@ -29,7 +28,6 @@
 
   function sys() { return units.system(project.system); }
   function fmt(v) { return units.format(v, project.system); }
-  function snapValue(v) { return units.snap(v, project.snap); }
 
   function commit() {
     S.save(project);
@@ -72,11 +70,10 @@
       app: $('app'),
       boards: $('boards'),
       snapSelect: $('snap-select'),
+      hintbar: doc.querySelector('.hintbar'),
       kerfInput: $('kerf-input'),
       kerfUnit: $('kerf-unit'),
       zoomRange: $('zoom-range'),
-      modeSelect: $('mode-select'),
-      modeAdd: $('mode-add'),
       undoBtn: $('undo-btn'),
       redoBtn: $('redo-btn'),
       addBoardBtn: $('add-board-btn'),
@@ -102,8 +99,7 @@
       selDupe: $('sel-dupe'),
       selDelete: $('sel-delete'),
       selStatus: $('sel-status'),
-      cutlist: $('cutlist'),
-      drawingHint: $('drawing-hint')
+      cutlist: $('cutlist')
     };
   }
 
@@ -152,7 +148,6 @@
     els.kerfInput.value = project.kerf;
     els.kerfInput.step = project.snap;
     els.zoomRange.value = project.zoom;
-    setMode('select');
     commit();
     els.boards.focus();
   }
@@ -178,9 +173,6 @@
   /* -------------------------------------------------------------- toolbar */
 
   function wireToolbar() {
-    on(els.modeSelect, 'click', function () { setMode('select'); });
-    on(els.modeAdd, 'click', function () { setMode('add'); });
-
     on(els.snapSelect, 'change', function () {
       project.snap = parseFloat(els.snapSelect.value);
       els.kerfInput.step = project.snap;
@@ -230,16 +222,6 @@
     Array.prototype.forEach.call(doc.querySelectorAll('details.menu[open]'), function (d) {
       d.removeAttribute('open');
     });
-  }
-
-  function setMode(next) {
-    mode = next;
-    draw = null;
-    els.modeSelect.classList.toggle('is-active', mode === 'select');
-    els.modeAdd.classList.toggle('is-active', mode === 'add');
-    els.boards.classList.toggle('mode-add', mode === 'add');
-    els.drawingHint.classList.toggle('hidden', mode !== 'add');
-    render();
   }
 
   /* ------------------------------------------------------------- rendering */
@@ -331,6 +313,8 @@
       surface.appendChild(renderPiece(board, piece));
     });
 
+    surface.appendChild(el('div', 'guides'));
+
     var ghost = el('div', 'add-ghost hidden', '+');
     surface.appendChild(ghost);
     var preview = el('div', 'draw-preview hidden');
@@ -412,11 +396,13 @@
   function updatePieceVisual(node, board, piece) {
     applyPieceGeometry(node, board, piece);
     var f = S.footprint(piece);
-    var tiny = f.w * scale < 64 || f.h * scale < 42;
+    // Fall back to the compact caption once the full one would not fit —
+    // metric reads longer than imperial, so measure rather than guess.
+    var full = units.formatPair(f.w, f.h, project.system);
+    var tiny = f.h * scale < 42 || f.w * scale < full.length * 6.6 + 10;
     var dims = node.querySelector('.piece-dims');
     if (dims) {
-      dims.textContent = tiny ? units.formatPairCompact(f.w, f.h, project.system)
-                              : units.formatPair(f.w, f.h, project.system);
+      dims.textContent = tiny ? units.formatPairCompact(f.w, f.h, project.system) : full;
     }
     var labelNode = node.querySelector('.piece-label');
     if (labelNode) labelNode.textContent = piece.label || '';
@@ -445,6 +431,46 @@
     try { els.boards.focus({ preventScroll: true }); } catch (err) { els.boards.focus(); }
   }
 
+  /* How far a magnet reaches, in board units — a constant few pixels on screen
+     however far in or out the plan is zoomed. */
+  function magnetRange() {
+    return 7 / scale;
+  }
+
+  function snapOpts() {
+    return { snap: project.snap, kerf: project.kerf, tolerance: magnetRange() };
+  }
+
+  /* Snaps a pointer position to the grid, then to any guide within reach.
+     The raw point is kept inside the board so dragging past a corner lands
+     flush against it rather than overshooting. */
+  function snapPoint(board, raw, anchor, excludeId) {
+    var inside = { x: S.clamp(raw.x, 0, board.w), y: S.clamp(raw.y, 0, board.h) };
+    return S.snapCorner(board, inside, anchor, snapOpts(), excludeId);
+  }
+
+  function paintGuides(boardId, gx, gy) {
+    clearGuides();
+    var layer = doc.querySelector('.board-surface[data-board="' + boardId + '"] .guides');
+    if (!layer) return;
+    if (gx != null) {
+      var vertical = el('div', 'guide guide-v');
+      vertical.style.left = (gx * scale) + 'px';
+      layer.appendChild(vertical);
+    }
+    if (gy != null) {
+      var horizontal = el('div', 'guide guide-h');
+      horizontal.style.top = (gy * scale) + 'px';
+      layer.appendChild(horizontal);
+    }
+  }
+
+  function clearGuides() {
+    Array.prototype.forEach.call(doc.querySelectorAll('.guides'), function (layer) {
+      layer.innerHTML = '';
+    });
+  }
+
   function pointIn(surface, event) {
     var rect = surface.getBoundingClientRect();
     return {
@@ -454,17 +480,66 @@
   }
 
   function attachSurfaceEvents(surface, board, ghost, preview) {
+    /* One mode throughout: press a piece to take hold of it, press bare board
+       to cut a new one. What is under the pointer decides, not a toolbar. */
+    on(surface, 'pointerdown', function (event) {
+      if (event.button !== 0 || drag || draw) return;
+      focusBoards();
+
+      var pieceNode = event.target.closest ? event.target.closest('.piece') : null;
+      if (pieceNode && surface.contains(pieceNode)) {
+        var found = S.findPiece(project, pieceNode.dataset.piece);
+        if (!found) return;
+        event.preventDefault();
+        select(found.piece.id);
+        startDrag(event, found.board, found.piece,
+          event.target.classList.contains('piece-handle') ? 'resize' : 'move');
+        return;
+      }
+
+      event.preventDefault();
+      var anchor = snapPoint(board, pointIn(surface, event), null, null);
+      draw = {
+        boardId: board.id,
+        ax: anchor.x,
+        ay: anchor.y,
+        x: anchor.x,
+        y: anchor.y,
+        downX: event.clientX,
+        downY: event.clientY,
+        live: false,
+        matched: false
+      };
+      ghost.classList.add('hidden');
+      // Capture so the rectangle keeps following the pointer past the board edge.
+      try { surface.setPointerCapture(event.pointerId); } catch (err) { /* fine without */ }
+    });
+
     on(surface, 'pointermove', function (event) {
-      if (mode !== 'add' || drag) return;
-      var p = pointIn(surface, event);
+      if (drag) return;
+      var raw = pointIn(surface, event);
+
       if (draw && draw.boardId === board.id) {
-        draw.x = snapValue(p.x);
-        draw.y = snapValue(p.y);
-        showPreview(preview, ghost);
-      } else if (!draw) {
+        if (!draw.live && Math.abs(event.clientX - draw.downX) +
+                          Math.abs(event.clientY - draw.downY) > 4) {
+          draw.live = true;
+        }
+        var corner = snapPoint(board, raw, { x: draw.ax, y: draw.ay }, null);
+        draw.x = corner.x;
+        draw.y = corner.y;
+        draw.matched = corner.matchW || corner.matchH;
+        if (draw.live) {
+          showPreview(preview);
+          paintGuides(board.id, corner.guideX, corner.guideY);
+        }
+        return;
+      }
+
+      if (!draw) {
+        var spot = snapPoint(board, raw, null, null);
         ghost.classList.remove('hidden');
-        ghost.style.left = (snapValue(p.x) * scale) + 'px';
-        ghost.style.top = (snapValue(p.y) * scale) + 'px';
+        ghost.style.left = (spot.x * scale) + 'px';
+        ghost.style.top = (spot.y * scale) + 'px';
       }
     });
 
@@ -472,57 +547,16 @@
       if (!draw) ghost.classList.add('hidden');
     });
 
-    on(surface, 'pointerdown', function (event) {
-      if (event.button !== 0) return;
-      focusBoards();
-      if (mode === 'add') {
-        event.preventDefault();
-        var p = pointIn(surface, event);
-        if (draw && draw.boardId === board.id) {
-          draw.x = snapValue(p.x);
-          draw.y = snapValue(p.y);
-          finishDraw();
-        } else {
-          draw = {
-            boardId: board.id,
-            ax: snapValue(p.x),
-            ay: snapValue(p.y),
-            x: snapValue(p.x),
-            y: snapValue(p.y),
-            downX: event.clientX,
-            downY: event.clientY
-          };
-          ghost.classList.add('hidden');
-          showPreview(preview, ghost);
-        }
-        return;
-      }
-      // Select mode: a press on bare board clears the selection.
-      if (event.target === surface) select(null);
-    });
-
-    on(surface, 'pointerup', function (event) {
-      if (mode !== 'add' || !draw || draw.boardId !== board.id) return;
-      var moved = Math.abs(event.clientX - draw.downX) + Math.abs(event.clientY - draw.downY);
-      if (moved > 8) {
-        var p = pointIn(surface, event);
-        draw.x = snapValue(p.x);
-        draw.y = snapValue(p.y);
+    on(surface, 'pointerup', function () {
+      if (!draw || draw.boardId !== board.id) return;
+      if (draw.live) {
         finishDraw();
+      } else {
+        // A press that never moved is just a click on bare board.
+        draw = null;
+        clearGuides();
+        select(null);
       }
-    });
-
-    on(surface, 'pointerdown', function (event) {
-      if (mode !== 'select' || event.button !== 0) return;
-      var pieceNode = event.target.closest ? event.target.closest('.piece') : null;
-      if (!pieceNode || !surface.contains(pieceNode)) return;
-      var piece = S.findPiece(project, pieceNode.dataset.piece);
-      if (!piece) return;
-      event.preventDefault();
-      focusBoards();
-      select(piece.piece.id);
-      var isHandle = event.target.classList.contains('piece-handle');
-      startDrag(event, piece.board, piece.piece, isHandle ? 'resize' : 'move');
     });
 
     on(surface, 'dblclick', function (event) {
@@ -535,17 +569,17 @@
     });
   }
 
-  function showPreview(preview, ghost) {
+  function showPreview(preview) {
     if (!draw) {
       preview.classList.add('hidden');
       return;
     }
-    ghost.classList.add('hidden');
     var x = Math.min(draw.ax, draw.x);
     var y = Math.min(draw.ay, draw.y);
     var w = Math.abs(draw.x - draw.ax);
     var h = Math.abs(draw.y - draw.ay);
     preview.classList.remove('hidden');
+    preview.classList.toggle('is-matched', !!draw.matched);
     preview.style.left = (x * scale) + 'px';
     preview.style.top = (y * scale) + 'px';
     preview.style.width = (w * scale) + 'px';
@@ -553,11 +587,19 @@
     preview.querySelector('.draw-dims').textContent = units.formatPair(w, h, project.system);
   }
 
+  function cancelDraw() {
+    if (!draw) return;
+    draw = null;
+    clearGuides();
+    render();
+  }
+
   function finishDraw() {
     if (!draw) return;
     var board = S.findBoard(project, draw.boardId);
     var current = draw;
     draw = null;
+    clearGuides();
     if (!board) { render(); return; }
 
     var x = Math.min(current.ax, current.x);
@@ -569,10 +611,6 @@
       render();   // too small to be a real piece — treat it as a cancel
       return;
     }
-
-    // Keep the new piece on the board it was drawn on.
-    x = S.clamp(x, 0, Math.max(0, board.w - w));
-    y = S.clamp(y, 0, Math.max(0, board.h - h));
 
     var piece = S.newPiece(w, h);
     piece.x = x;
@@ -634,10 +672,11 @@
 
     if (drag.kind === 'resize') {
       var surface = doc.querySelector('.board-surface[data-board="' + board.id + '"]');
-      var p = pointIn(surface, event);
-      var fw = Math.max(project.snap, snapValue(p.x - piece.x));
-      var fh = Math.max(project.snap, snapValue(p.y - piece.y));
-      setFootprint(piece, fw, fh);
+      var corner = snapPoint(board, pointIn(surface, event), { x: piece.x, y: piece.y }, piece.id);
+      setFootprint(piece,
+        Math.max(project.snap, corner.x - piece.x),
+        Math.max(project.snap, corner.y - piece.y));
+      paintGuides(board.id, corner.guideX, corner.guideY);
       refreshDragged(board, piece);
       return;
     }
@@ -657,8 +696,10 @@
 
     var pt = pointIn(targetSurface, event);
     var f = S.footprint(piece);
-    piece.x = S.clamp(snapValue(pt.x - drag.grabX), 0, Math.max(0, board.w - f.w));
-    piece.y = S.clamp(snapValue(pt.y - drag.grabY), 0, Math.max(0, board.h - f.h));
+    var snapped = S.snapMove(board, piece, pt.x - drag.grabX, pt.y - drag.grabY, snapOpts());
+    piece.x = S.clamp(snapped.x, 0, Math.max(0, board.w - f.w));
+    piece.y = S.clamp(snapped.y, 0, Math.max(0, board.h - f.h));
+    paintGuides(board.id, snapped.guideX, snapped.guideY);
     refreshDragged(board, piece);
   }
 
@@ -685,6 +726,7 @@
     global.removeEventListener('pointerup', onDragEnd);
     global.removeEventListener('pointercancel', onDragEnd);
     drag = null;
+    clearGuides();
     if (moved) commit();
     else render();
   }
@@ -1017,8 +1059,7 @@
       var typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || event.target.isContentEditable;
 
       if (event.key === 'Escape') {
-        if (draw) { draw = null; render(); }
-        else if (mode === 'add') setMode('select');
+        if (draw) cancelDraw();
         else if (selectedId) select(null);
         if (typing) event.target.blur();
         return;
@@ -1040,8 +1081,6 @@
 
       var step = event.shiftKey ? project.snap * 10 : project.snap;
       switch (event.key) {
-        case 'v': case 'V': setMode('select'); break;
-        case 'a': case 'A': setMode('add'); break;
         case 'r': case 'R': rotateSelected(); break;
         case 'Delete': case 'Backspace':
           if (selectedId) { event.preventDefault(); deleteSelected(); }
