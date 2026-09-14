@@ -10,21 +10,36 @@ nothing leaves your machine.
 
 1. **Set the board size.** Two boxes and a unit drop-down — `4` × `4` feet, or
    `120` × `60` centimetres.
-2. **Add pieces.** Either hit **Add piece** and draw one on the board (click a
-   corner, click the opposite corner — or press and drag), or type a size into
+2. **Add pieces.** Drag across bare board to cut one, or type a size into
    **Quick add** and let it drop into the first free spot.
 3. **Arrange.** Drag pieces around, rotate them, resize from the corner handle.
-   Pieces snap to the increment chosen in the toolbar.
 4. **Add boards.** Press **+ Board** for another sheet, and drag pieces straight
    from one board to another. If a quick-added piece has nowhere to go, a new
    board appears for it.
 
+There are no modes. What is under the pointer decides what a drag does: press a
+piece to take hold of it, press bare board to cut a new one. A click on bare
+board just clears the selection.
+
 ### Snapping
+
+Everything lands on the grid increment chosen in the toolbar:
 
 | Units | Increments |
 | --- | --- |
 | Inches | 1", 1/2", 1/4", 1/8" |
 | Centimetres | 1 cm, 0.5 cm |
+
+On top of the grid, edges are magnetic. As you drag, an edge within a few pixels
+snaps flush to:
+
+- the **board's** edges — drag past a corner and the piece settles into it;
+- a **neighbour's** edges, leaving the saw kerf between them if one is set;
+- a **size you have already cut**, so a second 12" × 16" piece comes out at
+  exactly 12" × 16" without typing anything.
+
+A cyan line marks the guide being followed; a new piece turns cyan when its size
+matches one already on the board.
 
 ### Warnings
 
@@ -38,7 +53,6 @@ nothing leaves your machine.
 
 | Key | Action |
 | --- | --- |
-| `V` / `A` | Select mode / Add-piece mode |
 | `R` | Rotate the selected piece 90° |
 | Arrow keys | Nudge by one snap increment (`Shift` for ten) |
 | `Delete` | Remove the selected piece |
@@ -62,7 +76,7 @@ directly works too — `.nojekyll` is already in place.
 index.html      markup and the two screens
 css/styles.css  all styling, including print and narrow-screen layouts
 js/units.js     inches vs centimetres: conversion, snapping, formatting
-js/state.js     the plan model, geometry, packing, storage, undo
+js/state.js     the plan model, geometry, snapping, packing, storage, undo
 js/app.js       rendering and every pointer/keyboard interaction
 ```
 

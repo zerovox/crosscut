@@ -53,15 +53,6 @@
     </div>
 
     <div class="tb-group">
-      <button id="mode-select" class="mode-button is-active" data-mode="select" title="Select, drag and rotate pieces (V)">
-        <span class="mode-glyph">&#10132;</span> Select
-      </button>
-      <button id="mode-add" class="mode-button" data-mode="add" title="Draw a new piece: click once, then click again (A)">
-        <span class="mode-glyph">+</span> Add piece
-      </button>
-    </div>
-
-    <div class="tb-group">
       <label class="tb-label" for="snap-select">Snap</label>
       <select id="snap-select" class="tb-select"></select>
     </div>
@@ -94,6 +85,12 @@
     </div>
   </header>
 
+  <p class="hintbar">
+    <strong>Drag on bare board</strong> to cut a new piece ·
+    <strong>drag a piece</strong> to move it, even onto another board ·
+    <strong>R</strong> rotates · edges snap to the board, to neighbours, and to sizes you have already cut
+  </p>
+
   <main class="workspace">
     <div id="boards" class="boards" tabindex="0"></div>
 
@@ -109,7 +106,7 @@
           </div>
           <label class="qa-label-field"><span>Label (optional)</span><input id="qa-label" type="text" placeholder="Shelf"></label>
           <button id="qa-add" class="primary">Add piece</button>
-          <p class="hint">Pieces are dropped into the first free spot. Or draw one straight onto a board with <strong>Add piece</strong>.</p>
+          <p class="hint">Pieces are dropped into the first free spot. Or drag one straight onto a board.</p>
         </div>
       </section>
 
@@ -143,7 +140,6 @@
     </aside>
   </main>
 
-  <div id="drawing-hint" class="drawing-hint hidden">Click once to set a corner, again to finish. <kbd>Esc</kbd> cancels.</div>
 </div>
 
 <script src="js/units.js"></script>

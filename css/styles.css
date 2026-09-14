@@ -192,27 +192,6 @@ input, select { font: inherit; color: inherit; }
 .tb-input { width: 72px; }
 .tb-range { width: 120px; accent-color: var(--accent); }
 
-.mode-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: #171c25;
-  color: var(--paper);
-  border: 1px solid var(--slate-3);
-  border-radius: 8px;
-  padding: 7px 12px;
-}
-
-.mode-button:hover { border-color: #56607a; }
-
-.mode-button.is-active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #2a1a08;
-}
-
-.mode-glyph { font-weight: 700; }
-
 .icon-button {
   background: #171c25;
   color: var(--paper);
@@ -290,8 +269,6 @@ input, select { font: inherit; color: inherit; }
   outline: none;
 }
 
-.boards.mode-add .board-surface { cursor: crosshair; }
-
 .board { max-width: 100%; }
 
 .board-head {
@@ -336,17 +313,15 @@ input, select { font: inherit; color: inherit; }
 .board-frame {
   display: inline-block;
   padding: 10px;
-  background: var(--slate-2);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
 }
 
 .board-surface {
   position: relative;
   background-color: var(--timber);
-  border: 2px solid #8a6136;
-  border-radius: 4px;
+  /* An outline rather than a border: it sits outside the board, so the
+     surface box is exactly the board and nothing shifts the pieces. */
+  outline: 1px solid #8a6136;
+  box-shadow: var(--shadow);
   background-image:
     linear-gradient(to right, rgba(120, 82, 40, 0.13) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(120, 82, 40, 0.13) 1px, transparent 1px),
@@ -359,6 +334,7 @@ input, select { font: inherit; color: inherit; }
     var(--major) var(--major);
   touch-action: none;
   overflow: visible;
+  cursor: crosshair;
 }
 
 /* ────────────────────────────── pieces ───────────────────────────── */
@@ -366,8 +342,6 @@ input, select { font: inherit; color: inherit; }
 .piece {
   position: absolute;
   background: var(--piece-color);
-  border: 2px solid rgba(0, 0, 0, 0.35);
-  border-radius: 3px;
   color: #1b1206;
   display: flex;
   flex-direction: column;
@@ -377,7 +351,7 @@ input, select { font: inherit; color: inherit; }
   padding: 4px;
   cursor: grab;
   user-select: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
 }
 
 body.is-dragging .piece { cursor: grabbing; }
@@ -418,26 +392,23 @@ body.is-resizing { cursor: nwse-resize; }
 }
 
 .piece.is-selected {
-  border-color: #12305c;
-  box-shadow: 0 0 0 2px #5aa0ff, inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 2px #1d4ed8, inset 0 0 0 3px rgba(255, 255, 255, 0.75);
   z-index: 5;
 }
 
 .piece.is-clashing {
-  border-color: var(--warn);
-  box-shadow: 0 0 0 2px rgba(224, 160, 42, 0.85);
+  box-shadow: inset 0 0 0 2px var(--warn);
   background-image: repeating-linear-gradient(45deg,
     rgba(0, 0, 0, 0.12) 0 6px, transparent 6px 12px);
 }
 
 .piece.is-outside {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.9);
+  box-shadow: inset 0 0 0 2px var(--danger);
   z-index: 6;
 }
 
 .piece.is-outside.is-selected {
-  box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.95), 0 0 0 6px rgba(90, 160, 255, 0.6);
+  box-shadow: inset 0 0 0 2px var(--danger), inset 0 0 0 4px rgba(29, 78, 216, 0.75);
 }
 
 .piece-tool {
@@ -469,13 +440,23 @@ body.is-resizing { cursor: nwse-resize; }
   width: 13px;
   height: 13px;
   background: var(--paper);
-  border: 1px solid #12305c;
-  border-radius: 3px;
+  border: 1px solid #1d4ed8;
   cursor: nwse-resize;
   z-index: 8;
 }
 
 /* ───────────────────────── drawing affordances ───────────────────────── */
+
+.guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.guide { position: absolute; background: #29c7e8; }
+.guide-v { top: -6px; bottom: -6px; width: 1px; }
+.guide-h { left: -6px; right: -6px; height: 1px; }
 
 .add-ghost {
   position: absolute;
@@ -495,13 +476,17 @@ body.is-resizing { cursor: nwse-resize; }
 
 .draw-preview {
   position: absolute;
-  border: 2px dashed var(--accent-dark);
-  background: rgba(217, 138, 60, 0.25);
+  outline: 1px dashed var(--accent-dark);
+  background: rgba(217, 138, 60, 0.28);
   pointer-events: none;
+  z-index: 7;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
+.draw-preview.is-matched { outline-color: #29c7e8; background: rgba(41, 199, 232, 0.22); }
+.draw-preview.is-matched .draw-dims { background: #0d6b80; color: #e6fbff; }
 
 .draw-dims {
   background: rgba(30, 20, 10, 0.85);
@@ -512,20 +497,16 @@ body.is-resizing { cursor: nwse-resize; }
   white-space: nowrap;
 }
 
-.drawing-hint {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  background: rgba(20, 25, 33, 0.94);
-  border: 1px solid var(--slate-3);
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13px;
-  color: #cfd6e2;
-  pointer-events: none;
-  z-index: 30;
+.hintbar {
+  margin: 0;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  color: #8d97a8;
+  background: #171c25;
+  border-bottom: 1px solid var(--line);
 }
+
+.hintbar strong { color: #c3cbd8; font-weight: 600; }
 
 kbd {
   background: #171c25;
@@ -654,6 +635,7 @@ kbd {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .sidebar { border-left: none; border-top: 1px solid var(--line); max-height: 45vh; }
   .toolbar { gap: 12px; }
+  .hintbar { display: none; }
   .big-input { font-size: 32px; padding: 16px 12px; }
 }
 
@@ -661,11 +643,12 @@ kbd {
 
 @media print {
   body { background: #fff; color: #000; }
-  .toolbar, .sidebar, .drawing-hint, .piece-tool, .piece-handle,
-  .add-ghost, .draw-preview, .board-del { display: none !important; }
+  .toolbar, .sidebar, .hintbar, .piece-tool, .piece-handle,
+  .add-ghost, .draw-preview, .guides, .board-del { display: none !important; }
   .workspace { display: block; }
   .boards { overflow: visible; padding: 0; gap: 24px; }
-  .board-frame { background: none; border: none; box-shadow: none; padding: 0; }
+  .board-frame { padding: 0; }
+  .board-surface { box-shadow: none; }
   .board-name, .board-size-input {
     color: #000;
     background: none;
@@ -674,7 +657,7 @@ kbd {
     width: auto;
     field-sizing: content;
   }
-  .piece.is-selected { box-shadow: none; border-color: rgba(0, 0, 0, 0.35); }
+  .piece.is-selected { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5); }
   .board-meta, .board-size, .board-times, .board-unit { color: #444; }
   .piece { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .board-surface { print-color-adjust: exact; -webkit-print-color-adjust: exact; }

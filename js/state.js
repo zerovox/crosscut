@@ -135,6 +135,103 @@
     return out.sort(function (a, b) { return a - b; });
   }
 
+  /* ------------------------------------------------------------- snapping */
+
+  /* Grid snapping gets you close; these guides make an edge land exactly flush
+     with the board, hard against a neighbour, or at a size already cut. */
+  function guidesFor(board, excludeId, kerf) {
+    var xs = [0, board.w], ys = [0, board.h], ws = [], hs = [];
+    board.pieces.forEach(function (p) {
+      if (p.id === excludeId) return;
+      var r = rectOf(p);
+      xs.push(r.x, r.x + r.w);
+      ys.push(r.y, r.y + r.h);
+      if (kerf) {
+        xs.push(r.x - kerf, r.x + r.w + kerf);
+        ys.push(r.y - kerf, r.y + r.h + kerf);
+      }
+      ws.push(r.w);
+      hs.push(r.h);
+    });
+    return { xs: xs, ys: ys, ws: ws, hs: hs };
+  }
+
+  function nearest(values, target, tolerance) {
+    var best = null, bestDelta = tolerance;
+    for (var i = 0; i < values.length; i++) {
+      var delta = Math.abs(values[i] - target);
+      if (delta < bestDelta - EPS) { bestDelta = delta; best = values[i]; }
+    }
+    return best === null ? null : { value: best, delta: bestDelta };
+  }
+
+  /* A moving piece can snap by either of its edges — whichever lands closer. */
+  function snapSpan(values, low, size, tolerance) {
+    var byLow = nearest(values, low, tolerance);
+    var byHigh = nearest(values, low + size, tolerance);
+    if (byLow && (!byHigh || byLow.delta <= byHigh.delta)) {
+      return { low: byLow.value, guide: byLow.value };
+    }
+    if (byHigh) return { low: byHigh.value - size, guide: byHigh.value };
+    return null;
+  }
+
+  function snapMove(board, piece, x, y, opts) {
+    var f = footprint(piece);
+    var g = guidesFor(board, piece.id, opts.kerf);
+    var out = {
+      x: units.snap(x, opts.snap),
+      y: units.snap(y, opts.snap),
+      guideX: null,
+      guideY: null
+    };
+    var sx = snapSpan(g.xs, x, f.w, opts.tolerance);
+    if (sx) { out.x = sx.low; out.guideX = sx.guide; }
+    var sy = snapSpan(g.ys, y, f.h, opts.tolerance);
+    if (sy) { out.y = sy.low; out.guideY = sy.guide; }
+    return out;
+  }
+
+  /* Snapping for a corner being dragged out — the free corner of a new piece,
+     or the resize handle. With an anchor, the span between the two corners can
+     also snap to the width or height of a piece already on the board. */
+  function snapCorner(board, point, anchor, opts, excludeId) {
+    var g = guidesFor(board, excludeId, opts.kerf);
+    var out = {
+      x: units.snap(point.x, opts.snap),
+      y: units.snap(point.y, opts.snap),
+      guideX: null,
+      guideY: null,
+      matchW: false,
+      matchH: false
+    };
+
+    out.x = resolveAxis(point.x, anchor ? anchor.x : null, g.xs, g.ws, opts, out, 'x');
+    out.y = resolveAxis(point.y, anchor ? anchor.y : null, g.ys, g.hs, opts, out, 'y');
+    return out;
+  }
+
+  function resolveAxis(value, anchor, edges, sizes, opts, out, axis) {
+    var edge = nearest(edges, value, opts.tolerance);
+    var size = null;
+
+    if (anchor !== null) {
+      var direction = value >= anchor ? 1 : -1;
+      var targets = sizes.map(function (s) { return anchor + direction * s; });
+      size = nearest(targets, value, opts.tolerance);
+    }
+
+    if (edge && (!size || edge.delta <= size.delta)) {
+      out[axis === 'x' ? 'guideX' : 'guideY'] = edge.value;
+      return edge.value;
+    }
+    if (size) {
+      out[axis === 'x' ? 'matchW' : 'matchH'] = true;
+      return size.value;
+    }
+    return units.snap(value, opts.snap);
+  }
+
   function boardStats(board, kerf) {
     var used = 0, bad = 0;
     board.pieces.forEach(function (p) {
@@ -285,6 +382,9 @@
     outOfBounds: outOfBounds,
     overlapping: overlapping,
     rotate: rotate,
+    guidesFor: guidesFor,
+    snapMove: snapMove,
+    snapCorner: snapCorner,
     findFreeSpot: findFreeSpot,
     boardStats: boardStats,
     findPiece: findPiece,
